@@ -2,9 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:photo_manager/photo_manager.dart';
 
 import '../services/database_service.dart';
 import '../services/model_service.dart';
+import '../services/photo_diff_service.dart';
 import '../services/tokenizer_service.dart';
 import '../utils/constants.dart';
 import 'download_screen.dart';
@@ -66,6 +68,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _setStatus('Opening database…');
     await DatabaseService().init();
+
+    // Only meaningful past the first run — first run's full discoverAssets()
+    // walk (in IndexingScreen) already covers everything, and permission
+    // may not be granted yet at this point, before that screen has asked.
+    if (await DatabaseService().hasDiscoveredAssets()) {
+      // Read-only permission check — never prompts. This runs on every
+      // launch, so it must not surprise the user with a permission dialog
+      // before they've even seen a screen.
+      final state = await PhotoManager.getPermissionState(
+          requestOption: const PermissionRequestOption());
+      if (state == PermissionState.authorized ||
+          state == PermissionState.limited) {
+        _setStatus('Checking for new photos…');
+        try {
+          await PhotoDiffService().checkForChanges();
+        } catch (e) {
+          // Best-effort: a stale unindexed count is recoverable (the next
+          // manual sync fixes it), a crashed launch isn't.
+          debugPrint('[SIMS] checkForChanges failed: $e');
+        }
+      }
+    }
 
     final (_, indexedCount) = await DatabaseService().getIndexStats();
     if (!mounted) return;

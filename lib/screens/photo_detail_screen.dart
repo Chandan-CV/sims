@@ -66,9 +66,13 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
   }
 
   Future<void> _openInGallery() async {
-    final file = await widget.asset.file;
-    if (file == null) return;
-    final uri = Uri.file(file.path);
+    // A raw file:// path can't be handed to another app's Intent — Android
+    // has blocked that since API 24 (FileUriExposedException). MediaStore's
+    // own content:// URI is what other apps are allowed to receive.
+    final url = await widget.asset.getMediaUrl();
+    if (url == null) return;
+    final uri = Uri.parse(url);
+    debugPrint('Opening in gallery: $uri');
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -203,10 +207,16 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
       body: Column(
         children: [
           Expanded(
-            child: AssetEntityImage(
-              widget.asset,
-              isOriginal: true,
-              fit: BoxFit.contain,
+            child: InteractiveViewer(
+              minScale: 1.0,
+              maxScale: 5.0,
+              panEnabled: true,
+              scaleEnabled: true,
+              child: AssetEntityImage(
+                widget.asset,
+                isOriginal: true,
+                fit: BoxFit.contain,
+              ),
             ),
           ),
           _buildActionBar(),

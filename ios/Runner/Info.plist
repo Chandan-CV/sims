@@ -4,14 +4,6 @@
 <dict>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>SIMS needs access to your photo library to index and search your images.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>processing</string>
-	</array>
-	<key>BGTaskSchedulerPermittedIdentifiers</key>
-	<array>
-		<string>sims.backgroundSync</string>
-	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

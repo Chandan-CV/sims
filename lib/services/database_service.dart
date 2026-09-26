@@ -20,6 +20,11 @@ class DatabaseService {
     _client = LibsqlClient.local(path);
     await _client!.connect();
     await _migrateSchema();
+    // Not gated by _kSchemaVersion: this is a standalone key/value store,
+    // not part of the `images` schema, so it doesn't need a destructive
+    // migration whenever that version bumps.
+    await _client!.execute(
+        'CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)');
   }
 
   Future<void> _migrateSchema() async {
@@ -49,10 +54,17 @@ class DatabaseService {
     if (assetIds.isEmpty) return;
     final txn = await _client!.transaction();
     try {
-      for (final id in assetIds) {
+      // Multi-row inserts: one round-trip per chunk instead of per id, which
+      // matters when a first-run discovery registers thousands of photos.
+      const chunkSize = 500;
+      for (var i = 0; i < assetIds.length; i += chunkSize) {
+        final chunk = assetIds.sublist(
+            i, (i + chunkSize).clamp(0, assetIds.length));
+        final placeholders = List.filled(chunk.length, '(?, NULL)').join(',');
         await txn.execute(
-          'INSERT OR IGNORE INTO images (asset_id, embedding) VALUES (?, NULL)',
-          positional: [id],
+          'INSERT OR IGNORE INTO images (asset_id, embedding) '
+          'VALUES $placeholders',
+          positional: chunk,
         );
       }
       await txn.commit();
@@ -116,23 +128,13 @@ class DatabaseService {
     return [for (final row in rows) row['asset_id'] as String];
   }
 
-  /// All asset ids currently tracked in the DB (discovered and/or indexed).
-  Future<Set<String>> getAllAssetIds() async {
-    final rows = await _client!.query('SELECT asset_id FROM images');
-    return {for (final row in rows) row['asset_id'] as String};
-  }
-
-  /// Deletes rows for asset ids no longer present on the device (photo
-  /// deleted/moved out of the library since the last sync). Returns the
-  /// number of rows removed.
-  Future<int> deleteAssetIdsNotIn(Set<String> currentDeviceIds) async {
-    final dbIds = await getAllAssetIds();
-    final stale = dbIds.difference(currentDeviceIds);
-    if (stale.isEmpty) return 0;
-
+  /// Removes specific rows, e.g. assets found to be gone from the device
+  /// when a search hit couldn't be loaded.
+  Future<void> deleteAssetIds(Iterable<String> assetIds) async {
+    if (assetIds.isEmpty) return;
     final txn = await _client!.transaction();
     try {
-      for (final id in stale) {
+      for (final id in assetIds) {
         await txn.execute(
           'DELETE FROM images WHERE asset_id = ?',
           positional: [id],
@@ -143,7 +145,6 @@ class DatabaseService {
       await txn.rollback();
       rethrow;
     }
-    return stale.length;
   }
 
   Future<List<String>> searchSimilar(
@@ -175,6 +176,25 @@ class DatabaseService {
       positional: [assetId, assetId, topK],
     );
     return rows.map((r) => r['asset_id'] as String).toList();
+  }
+
+  /// The last time [PhotoDiffService] registered new assets, as millis
+  /// since epoch — null if it's never run. Stored in the DB rather than
+  /// SharedPreferences so all app state lives in one file.
+  Future<int?> getLastSyncMillis() async {
+    final rows = await _client!.query(
+      "SELECT value FROM meta WHERE key = 'last_sync_millis'",
+    );
+    if (rows.isEmpty) return null;
+    return int.tryParse(rows.first['value'] as String);
+  }
+
+  Future<void> setLastSyncMillis(int millis) async {
+    await _client!.execute(
+      "INSERT INTO meta (key, value) VALUES ('last_sync_millis', ?) "
+      'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
+      positional: [millis.toString()],
+    );
   }
 
   Future<void> dispose() async {

@@ -19,18 +19,17 @@ class IndexingService {
   final _model = ModelService();
   bool _running = false;
 
-  /// True while [indexAll] is in flight — only one run is allowed at a
-  /// time, so callers handing off between an in-app run and a background
-  /// one need to wait for this to clear first.
+  /// True while [indexAll] is in flight — only one run is allowed at a time.
   bool get isRunning => _running;
 
-  /// One-time full device walk (per install, until stage-2 sync exists).
+  /// One-time full device walk (per install).
   /// Registers every discovered asset id as a NULL-embedding stub row,
   /// reporting progress against photo_manager's already-deduplicated total.
   Future<void> discoverAssets({required ProgressCallback onProgress}) async {
+    debugPrint('[SIMS] Discovering assets...');
     final total = await PhotoManager.getAssetCount(type: RequestType.image);
-    final paths =
-        await PhotoManager.getAssetPathList(type: RequestType.image);
+    final paths = await PhotoManager.getAssetPathList(
+        type: RequestType.image, onlyAll: true);
     final seen = <String>{};
 
     for (final path in paths) {
@@ -53,42 +52,6 @@ class IndexingService {
         page++;
       }
     }
-  }
-
-  /// Full reconciliation against the device library: registers any newly
-  /// discovered assets as stub rows and removes DB rows for assets that no
-  /// longer exist on the device (deleted/moved out of the library). Used by
-  /// [BackgroundSyncService] and can be reused anywhere a full diff (not
-  /// just an append-only discovery) is needed.
-  /// Returns (newly discovered count, deleted count).
-  Future<(int, int)> syncWithDevice() async {
-    final existingIds = await _db.getAllAssetIds();
-    final paths = await PhotoManager.getAssetPathList(type: RequestType.image);
-    final seen = <String>{};
-
-    for (final path in paths) {
-      int page = 0;
-      const pageSize = 100;
-      while (true) {
-        final batch =
-            await path.getAssetListPaged(page: page, size: pageSize);
-
-        final newIds = [
-          for (final asset in batch)
-            if (seen.add(asset.id)) asset.id,
-        ];
-        if (newIds.isNotEmpty) {
-          await _db.discoverAssetIds(newIds);
-        }
-
-        if (batch.length < pageSize) break;
-        page++;
-      }
-    }
-
-    final deleted = await _db.deleteAssetIdsNotIn(seen);
-    final discovered = seen.difference(existingIds).length;
-    return (discovered, deleted);
   }
 
   /// Returns (total device images, already indexed count) — pure DB query.

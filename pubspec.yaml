@@ -44,10 +44,7 @@ dependencies:
   photo_manager_image_provider: ^2.2.0
   dio: ^5.9.2
   path_provider: ^2.1.6
-  shared_preferences: ^2.5.5
   image: ^4.9.1
-  workmanager: ^0.10.0
-  flutter_local_notifications: ^22.0.0
 
 dev_dependencies:
   flutter_test:

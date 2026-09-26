@@ -52,9 +52,30 @@ class _SearchScreenState extends State<SearchScreen> {
     final start = _results.length;
     final end = (start + kSearchPageSize).clamp(0, _resultIds.length);
     final batch = <AssetEntity>[];
+    final missing = <String>{};
     for (final id in _resultIds.sublist(start, end)) {
       final asset = await AssetEntity.fromId(id);
-      if (asset != null) batch.add(asset);
+      if (asset != null) {
+        batch.add(asset);
+      } else {
+        missing.add(id);
+      }
+    }
+
+    // A hit that no longer resolves was deleted from the device: drop its
+    // row now instead of scanning the whole library for deletions. Only
+    // trust that under full access — with limited access (iOS) fromId also
+    // returns null for photos that exist but weren't shared with the app.
+    if (missing.isNotEmpty) {
+      final state = await PhotoManager.getPermissionState(
+          requestOption: const PermissionRequestOption());
+      if (state == PermissionState.authorized) {
+        await DatabaseService().deleteAssetIds(missing);
+        _resultIds = [
+          for (final id in _resultIds)
+            if (!missing.contains(id)) id,
+        ];
+      }
     }
 
     if (mounted) {

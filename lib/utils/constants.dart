@@ -29,32 +29,3 @@ const int kCacheClearIntervalBatches = 50;
 // MobileCLIP / CLIP normalisation constants
 const List<double> kImageMean = [0.48145466, 0.4578275, 0.40821073];
 const List<double> kImageStd = [0.26862954, 0.26130258, 0.27577711];
-
-// Background sync (see BackgroundSyncService)
-const String kBackgroundSyncTaskId = 'sims.backgroundSync';
-const String kBackgroundSyncTaskName = 'sims.backgroundSync';
-const String kPrefLastAssetCount = 'sims.lastAssetCount';
-const String kPrefLastSyncMillis = 'sims.lastSyncMillis';
-
-// "Run in background" one-off indexing task, handed off from IndexingScreen
-// (see BackgroundSyncService.runIndexNowInBackground).
-const String kIndexNowTaskId = 'sims.indexNow';
-const String kIndexNowTaskName = 'sims.indexNow';
-
-// Cross-isolate progress state for the "index now" task. The background
-// task runs in its own isolate with no shared memory, so it publishes its
-// progress through SharedPreferences for the UI isolate to read back.
-const String kPrefBgIndexRunning = 'sims.bgIndex.running';
-const String kPrefBgIndexIndexed = 'sims.bgIndex.indexed';
-const String kPrefBgIndexTotal = 'sims.bgIndex.total';
-const String kPrefBgIndexUpdatedMillis = 'sims.bgIndex.updatedMillis';
-
-/// How long a "running" flag stays trustworthy without a fresh heartbeat.
-/// The OS can kill the background isolate without warning, leaving the flag
-/// set; anything staler than this is treated as no longer running.
-const Duration kBgIndexStaleAfter = Duration(minutes: 2);
-
-// Progress notification shown while the "index now" task runs.
-const String kIndexingNotificationChannelId = 'sims_indexing';
-const String kIndexingNotificationChannelName = 'Photo indexing';
-const int kIndexingNotificationId = 4201;
