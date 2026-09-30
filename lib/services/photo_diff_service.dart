@@ -25,8 +25,10 @@ class PhotoDiff {
 ///
 /// - Additions are counted with a single date-filtered `getAssetCount` —
 ///   cheap, an index lookup on the device's media store, not a per-row
-///   fetch. It can overcount slightly: an edited (not just newly added)
-///   photo also matches "updated since X".
+///   fetch. Filtered on `createTimeCond` (MediaStore's `date_added`), which
+///   only changes when a row is actually inserted — not `updateTimeCond`
+///   (`date_modified`), which would also fire on an edit, a rename or a
+///   favorite toggle and overcount "new" photos.
 /// - Removals aren't found directly. They're inferred from
 ///   `(DB total + added) - device count`. This is an estimate: it's exact
 ///   when adds and deletes don't happen to overlap between checks, but an
@@ -70,7 +72,7 @@ class PhotoDiffService {
     final added = await PhotoManager.getAssetCount(
       type: RequestType.image,
       filterOption: FilterOptionGroup(
-        updateTimeCond: DateTimeCond(
+        createTimeCond: DateTimeCond(
           min: DateTime.fromMillisecondsSinceEpoch(checkpoint),
           max: DateTime.now(),
         ),
@@ -110,7 +112,7 @@ class PhotoDiffService {
       type: RequestType.image,
       onlyAll: true,
       filterOption: FilterOptionGroup(
-        updateTimeCond: DateTimeCond(min: since, max: now),
+        createTimeCond: DateTimeCond(min: since, max: now),
       ),
     );
 

@@ -178,24 +178,42 @@ class DatabaseService {
     return rows.map((r) => r['asset_id'] as String).toList();
   }
 
-  /// The last time [PhotoDiffService] registered new assets, as millis
-  /// since epoch — null if it's never run. Stored in the DB rather than
-  /// SharedPreferences so all app state lives in one file.
-  Future<int?> getLastSyncMillis() async {
+  /// Generic key/value read/write on the `meta` table — used for anything
+  /// that's small, single-valued, and shared across isolates (e.g. a sync
+  /// checkpoint, a background task's heartbeat). Both the UI isolate and a
+  /// WorkManager background isolate open the same SQLite file, so this
+  /// serves the same purpose SharedPreferences would, without adding that
+  /// dependency back.
+  Future<String?> getMeta(String key) async {
     final rows = await _client!.query(
-      "SELECT value FROM meta WHERE key = 'last_sync_millis'",
+      'SELECT value FROM meta WHERE key = ?',
+      positional: [key],
     );
     if (rows.isEmpty) return null;
-    return int.tryParse(rows.first['value'] as String);
+    return rows.first['value'] as String?;
   }
 
-  Future<void> setLastSyncMillis(int millis) async {
+  Future<void> setMeta(String key, String value) async {
     await _client!.execute(
-      "INSERT INTO meta (key, value) VALUES ('last_sync_millis', ?) "
+      'INSERT INTO meta (key, value) VALUES (?, ?) '
       'ON CONFLICT (key) DO UPDATE SET value = excluded.value',
-      positional: [millis.toString()],
+      positional: [key, value],
     );
   }
+
+  Future<void> deleteMeta(String key) async {
+    await _client!.execute('DELETE FROM meta WHERE key = ?', positional: [key]);
+  }
+
+  /// The last time [PhotoDiffService] registered new assets, as millis
+  /// since epoch — null if it's never run.
+  Future<int?> getLastSyncMillis() async {
+    final v = await getMeta('last_sync_millis');
+    return v == null ? null : int.tryParse(v);
+  }
+
+  Future<void> setLastSyncMillis(int millis) =>
+      setMeta('last_sync_millis', millis.toString());
 
   Future<void> dispose() async {
     await _client?.dispose();

@@ -29,3 +29,20 @@ const int kCacheClearIntervalBatches = 50;
 // MobileCLIP / CLIP normalisation constants
 const List<double> kImageMean = [0.48145466, 0.4578275, 0.40821073];
 const List<double> kImageStd = [0.26862954, 0.26130258, 0.27577711];
+
+// "Run in background" one-off indexing task, handed off from IndexingScreen
+// (see BackgroundIndexService). Android only.
+const String kIndexNowTaskId = 'sims.indexNow';
+const String kIndexNowTaskName = 'sims.indexNow';
+
+// The background task's heartbeat, so the UI isolate can tell "still
+// running" apart from "the OS killed it without cleaning up after itself".
+// Stored in DatabaseService's meta table — both isolates open the same
+// SQLite file, so no SharedPreferences is needed just for this.
+const String kMetaBgIndexHeartbeatMillis = 'bg_index_heartbeat_millis';
+const Duration kBgIndexStaleAfter = Duration(minutes: 2);
+
+// Progress notification shown while the "index now" task runs.
+const String kIndexingNotificationChannelId = 'sims_indexing';
+const String kIndexingNotificationChannelName = 'Photo indexing';
+const int kIndexingNotificationId = 4201;

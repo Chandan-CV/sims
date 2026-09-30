@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'screens/home_screen.dart';
+import 'services/background_index_service.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Registers the WorkManager plugin for the "Run in background" indexing
+  // hand-off (see BackgroundIndexService). This does not schedule or start
+  // anything on its own — cheap and safe to call unconditionally.
+  await BackgroundIndexService().initialize();
   runApp(const SimsApp());
 }
 

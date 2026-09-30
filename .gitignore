@@ -28,6 +28,11 @@ migrate_working_dir/
 **/ios/Flutter/.last_build_id
 .dart_tool/
 .flutter-plugins-dependencies
+
+# Release signing — never commit the keystore or its passwords.
+android/key.properties
+*.jks
+*.keystore
 .pub-cache/
 .pub/
 /build/
