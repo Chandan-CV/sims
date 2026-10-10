@@ -5,10 +5,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sims/utils/image_preprocessor.dart';
 
 // Reference tensor from Hugging Face's CLIPImageProcessor
-// (openai/clip-vit-base-patch32) for test/fixtures/preprocess_sample.png.
+// (openai/clip-vit-base-patch32) for test/fixtures/preprocess_sample.jpg.
 void main() {
   test('preprocessing matches the reference CLIP image processor', () {
-    final bytes = File('test/fixtures/preprocess_sample.png').readAsBytesSync();
+    final bytes = File('test/fixtures/preprocess_sample.jpg').readAsBytesSync();
     final golden = jsonDecode(
             File('test/fixtures/preprocess_sample.json').readAsStringSync())
         as Map<String, dynamic>;
