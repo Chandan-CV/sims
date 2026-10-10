@@ -1,14 +1,21 @@
-// Model download URLs — replace with your GitHub release links
-const String kImageEncoderUrl = 'https://github.com/Chandan-CV/sims/releases/download/v0.0.1/image_encoder.onnx';
-const String kTextEncoderUrl = 'https://github.com/Chandan-CV/sims/releases/download/v0.0.1/text_encoder.onnx';
+// OpenAI CLIP ViT-B/32, int8-quantized ONNX (produced by tools/export_clip).
+// Model download URLs — upload the two files in tools/export_clip/out/ to this
+// GitHub release.
+const String kModelReleaseBaseUrl =
+    'https://github.com/Chandan-CV/sims/releases/download/v0.0.2';
+const String kImageEncoderFilename = 'clip_vit_b32_image_int8.onnx';
+const String kTextEncoderFilename = 'clip_vit_b32_text_int8.onnx';
+const String kImageEncoderUrl = '$kModelReleaseBaseUrl/$kImageEncoderFilename';
+const String kTextEncoderUrl = '$kModelReleaseBaseUrl/$kTextEncoderFilename';
 
-const String kImageEncoderFilename = 'image_encoder.onnx';
-const String kTextEncoderFilename = 'text_encoder.onnx';
+// Approximate combined download size, shown on the download screen.
+const String kModelDownloadSizeLabel = '~200 MB';
+
 const String kDbFilename = 'sims.db';
 
 const int kEmbeddingDim = 512;
 const int kMaxTokenLength = 77;
-const int kImageSize = 256;
+const int kImageSize = 224;
 const int kSearchTopK = 200;
 const int kSearchPageSize = 50;
 
@@ -26,7 +33,7 @@ const int kIndexBatchSize = 10;
 // bounded instead of accumulating for the whole library.
 const int kCacheClearIntervalBatches = 50;
 
-// MobileCLIP / CLIP normalisation constants
+// OpenAI CLIP normalisation constants (applied in ImagePreprocessor)
 const List<double> kImageMean = [0.48145466, 0.4578275, 0.40821073];
 const List<double> kImageStd = [0.26862954, 0.26130258, 0.27577711];
 

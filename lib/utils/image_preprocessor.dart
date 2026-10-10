@@ -7,23 +7,31 @@ class ImagePreprocessor {
     var decoded = img.decodeImage(bytes);
     if (decoded == null) throw Exception('Failed to decode image');
 
-    // Center-crop to square then resize to model input size
-    final minSide = decoded.width < decoded.height ? decoded.width : decoded.height;
-    final x = (decoded.width - minSide) ~/ 2;
-    final y = (decoded.height - minSide) ~/ 2;
-    final cropped = img.copyCrop(decoded, x: x, y: y, width: minSide, height: minSide);
-    final resized = img.copyResize(cropped, width: kImageSize, height: kImageSize,
-        interpolation: img.Interpolation.linear);
+    // CLIP preprocessing: resize the shorter side to the model input size
+    // (bicubic), then center-crop to a square.
+    final resized = decoded.width < decoded.height
+        ? img.copyResize(decoded,
+            width: kImageSize, interpolation: img.Interpolation.cubic)
+        : img.copyResize(decoded,
+            height: kImageSize, interpolation: img.Interpolation.cubic);
+    final x = (resized.width - kImageSize) ~/ 2;
+    final y = (resized.height - kImageSize) ~/ 2;
+    final cropped = img.copyCrop(resized,
+        x: x, y: y, width: kImageSize, height: kImageSize);
 
-    // Convert to float32 tensor in CHW format [1, 3, 256, 256] and normalise
-    final tensor = Float32List(3 * kImageSize * kImageSize);
+    // Convert to float32 tensor in CHW format [1, 3, 224, 224], scaled to
+    // 0..1 and normalised with CLIP's per-channel mean/std.
+    const plane = kImageSize * kImageSize;
+    final tensor = Float32List(3 * plane);
     for (int h = 0; h < kImageSize; h++) {
       for (int w = 0; w < kImageSize; w++) {
-        final pixel = resized.getPixel(w, h);
+        final pixel = cropped.getPixel(w, h);
         final offset = h * kImageSize + w;
-        tensor[0 * kImageSize * kImageSize + offset] = pixel.r / 255.0;
-        tensor[1 * kImageSize * kImageSize + offset] = pixel.g / 255.0;
-        tensor[2 * kImageSize * kImageSize + offset] = pixel.b / 255.0;
+        tensor[offset] = (pixel.r / 255.0 - kImageMean[0]) / kImageStd[0];
+        tensor[plane + offset] =
+            (pixel.g / 255.0 - kImageMean[1]) / kImageStd[1];
+        tensor[2 * plane + offset] =
+            (pixel.b / 255.0 - kImageMean[2]) / kImageStd[2];
       }
     }
     return tensor;
