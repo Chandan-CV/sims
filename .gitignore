@@ -53,3 +53,11 @@ app.*.map.json
 # Built artifacts (publish these via GitHub Releases instead)
 *.apk
 *.aab
+# CLIP export tooling
+tools/export_clip/.venv*/
+tools/export_clip/out/
+
+# ONNX models (distribute via GitHub Releases)
+*.onnx
+
+.venv

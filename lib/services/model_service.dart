@@ -23,8 +23,8 @@ class ModelService {
 
   /// Encodes a batch of already-preprocessed images in a single ONNX run.
   /// The exported image encoder has a dynamic batch dimension
-  /// (`['batch_size', 3, 256, 256]` -> `['batch_size', 512]`), so stacking
-  /// N images into one `[N, 3, 256, 256]` tensor and running once amortises
+  /// (`['batch_size', 3, 224, 224]` -> `['batch_size', 512]`), so stacking
+  /// N images into one `[N, 3, 224, 224]` tensor and running once amortises
   /// the fixed per-call (platform channel + session) overhead over all N,
   /// instead of paying it once per image.
   Future<List<List<double>>> encodeImages(List<Float32List> imageBatch) async {
@@ -78,8 +78,9 @@ class ModelService {
       }
     }
 
-    // flutter_onnxruntime returns [1, 77, 512] when the model's ArgMax node
-    // is unsupported — extract the EOS token embedding manually.
+    // The exported CLIP text encoder pools at the EOS token in-graph and
+    // returns [1, 512]. Defensive fallback in case a model returns the
+    // per-token [1, 77, 512] states instead: extract the EOS embedding.
     if (flat.length == kMaxTokenLength * kEmbeddingDim) {
       final eosIndex = inputIds.indexOf(49407);
       final start = (eosIndex < 0 ? 0 : eosIndex) * kEmbeddingDim;

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:flutter/services.dart';
 
@@ -41,42 +40,66 @@ class TokenizerService {
     _initialized = true;
   }
 
+  // CLIP's pre-tokenisation pattern (applied to lower-cased, whitespace-
+  // normalised text): special tokens, English contractions, runs of letters,
+  // single digits, and runs of other non-space symbols.
+  static final RegExp _pattern = RegExp(
+    r"<\|startoftext\|>|<\|endoftext\|>|'s|'t|'re|'ve|'m|'ll|'d|[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+",
+    unicode: true,
+  );
+
+  final Map<String, List<int>> _wordCache = {};
+
   /// Returns (input_ids [1,77], attention_mask [1,77]) as flat lists.
   (List<int>, List<int>) tokenize(String text) {
     assert(_initialized, 'TokenizerService.init() not called');
-    text = text.toLowerCase().trim();
+    text = text.replaceAll(RegExp(r'\s+'), ' ').trim().toLowerCase();
 
     final allIds = <int>[_bos];
-
-    // Simple whitespace pre-tokenisation (sufficient for search queries)
-    for (final word in text.split(RegExp(r'\s+'))) {
-      if (word.isEmpty) continue;
-
-      // Map each UTF-8 byte through the GPT-2 byte encoder
-      final byteChars = utf8
-          .encode(word)
-          .map((b) => _byteToUnicode[b] ?? String.fromCharCode(b))
-          .toList();
-
-      // Apply BPE merges
-      final bpeTokens = _bpe(byteChars);
-
-      for (final t in bpeTokens) {
-        final id = _vocab[t];
-        if (id != null) allIds.add(id);
-      }
+    for (final match in _pattern.allMatches(text)) {
+      allIds.addAll(_encodeWord(match.group(0)!));
     }
 
+    // Truncate to the context length but keep the EOS token last, as CLIP's
+    // own tokenizer does — the text encoder pools at the EOS position.
+    if (allIds.length > kMaxTokenLength - 1) {
+      allIds.removeRange(kMaxTokenLength - 1, allIds.length);
+    }
     allIds.add(_eos);
 
     final inputIds = List<int>.filled(kMaxTokenLength, _pad);
     final attentionMask = List<int>.filled(kMaxTokenLength, 0);
-    final length = min(allIds.length, kMaxTokenLength);
-    for (int i = 0; i < length; i++) {
+    for (int i = 0; i < allIds.length; i++) {
       inputIds[i] = allIds[i];
       attentionMask[i] = 1;
     }
     return (inputIds, attentionMask);
+  }
+
+  List<int> _encodeWord(String word) {
+    final cached = _wordCache[word];
+    if (cached != null) return cached;
+
+    final List<int> ids;
+    if (word == '<|startoftext|>' || word == '<|endoftext|>') {
+      ids = [_vocab[word]!];
+    } else {
+      // Map each UTF-8 byte through the GPT-2 byte encoder.
+      final symbols = utf8
+          .encode(word)
+          .map((b) => _byteToUnicode[b] ?? String.fromCharCode(b))
+          .toList();
+      // CLIP marks the end of every word by suffixing its last symbol with
+      // "</w>" before applying merges (the vocab holds both forms, and the
+      // text encoder was trained on the "</w>" ids).
+      symbols[symbols.length - 1] = '${symbols.last}</w>';
+      ids = [
+        for (final t in _bpe(symbols))
+          if (_vocab[t] != null) _vocab[t]!,
+      ];
+    }
+    if (_wordCache.length < 10000) _wordCache[word] = ids;
+    return ids;
   }
 
   // --- BPE helpers ---

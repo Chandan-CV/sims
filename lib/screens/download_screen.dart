@@ -98,7 +98,7 @@ class _DownloadScreenState extends State<DownloadScreen> {
                   textAlign: TextAlign.center),
               const SizedBox(height: 16),
               Text(
-                'To get started, download the on-device AI models (~100 MB).',
+                'To get started, download the on-device AI models ($kModelDownloadSizeLabel).',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyLarge,
               ),

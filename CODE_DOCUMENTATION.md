@@ -46,7 +46,7 @@ SplashScreen (lib/screens/splash_screen.dart)
   │                  └─ DB empty      → IndexingScreen
   │
 DownloadScreen (download_screen.dart)
-  └─ downloads image_encoder.onnx + text_encoder.onnx via Dio → back to SplashScreen
+  └─ downloads clip_vit_b32_image_int8.onnx + clip_vit_b32_text_int8.onnx via Dio → back to SplashScreen
   │
 IndexingScreen (indexing_screen.dart)
   └─ requests PhotoManager permission → IndexingService.indexAll() → SplashScreen
@@ -79,7 +79,7 @@ All four services are hand-rolled singletons using the `factory` constructor + s
 
 ### 4.2 `ModelService`
 - Wraps `flutter_onnxruntime`'s `OnnxRuntime`, holding one `OrtSession` for the image encoder and one for the text encoder.
-- `encodeImage`: builds a `[1, 3, 256, 256]` float tensor, runs the image session, returns the flattened first output.
+- `encodeImage`: builds a `[N, 3, 224, 224]` float tensor, runs the image session, returns the flattened first output.
 - `encodeText`: builds `[1, 77]` int64 tensors for input ids, runs the text session. Contains a workaround: if the runtime's ArgMax node isn't supported and the model returns the full `[1, 77, 512]` sequence output instead of the pooled `[1, 512]` embedding, the code manually finds the EOS token (`id 49407`) in `inputIds` and slices out its 512-dim embedding. This is a fragile heuristic tied to a specific CLIP tokenizer's special-token ids and to `kEmbeddingDim`/`kMaxTokenLength` staying in sync with the exported model.
 - Note: `encodeText` builds the attention-mask tensor's arguments but the mask is never actually passed to the session (`_textEncoder!.run({'text_input': idsTensor})` — no `attention_mask` key). If the exported ONNX graph expects an attention mask input, it's silently not supplied.
 
@@ -91,13 +91,13 @@ All four services are hand-rolled singletons using the `factory` constructor + s
 ### 4.4 `IndexingService`
 - `getAllAssets()`: paginates through every `AssetPathList` from `photo_manager` in batches of 100, dedupes by id.
 - `countUnindexed()`: diffs all device assets against `DatabaseService.getIndexedAssetIds()` — an O(n) full-table id fetch every time it's called (including every time `SearchScreen` mounts and after returning from `IndexingScreen`).
-- `indexAll()`: guarded by an in-memory `_running` flag (prevents concurrent runs, but is not persisted — killing the app mid-index leaves no resumption state beyond "whatever's already in the DB won't be re-processed"). For each pending asset: fetch a 256×256 thumbnail (not the original), preprocess, run through `ModelService.encodeImage`, insert. Per-image failures are caught and logged, not surfaced to the user, and don't stop the batch.
+- `indexAll()`: guarded by an in-memory `_running` flag (prevents concurrent runs, but is not persisted — killing the app mid-index leaves no resumption state beyond "whatever's already in the DB won't be re-processed"). For each pending asset: fetch a 224×224 thumbnail (not the original), preprocess, run through `ModelService.encodeImage`, insert. Per-image failures are caught and logged, not surfaced to the user, and don't stop the batch.
 - All of this runs synchronously on the UI isolate — there is no isolate/compute offload, so indexing a large library will visibly block the UI thread's frame budget during preprocessing/inference (the progress bar UI still updates because `setState` is called between awaits, but heavy CPU work like `img.decodeImage`/BPE-free tensor packing happens inline).
 
 ## 5. Utilities (`lib/utils/`)
 
-- **`constants.dart`**: all magic numbers/URLs live here — model download URLs (hardcoded to a specific GitHub repo/release tag `Chandan-CV/sims v0.0.1`), filenames, `kEmbeddingDim=512`, `kMaxTokenLength=77`, `kImageSize=256`, `kSearchTopK=200`, `kSearchPageSize=50`, and CLIP/MobileCLIP normalization mean/std.
-- **`image_preprocessor.dart`**: center-crop to square → resize to 256×256 (linear interpolation) → normalize to `[0,1]` and pack into CHW `Float32List`. **Note:** this normalizes to `0..1` only — the `kImageMean`/`kImageStd` constants defined in `constants.dart` are declared but never applied here. If the exported ONNX image encoder expects CLIP-standard mean/std normalization, this is a correctness bug (embeddings would be off-distribution from what the model was trained/exported to expect, unless the ONNX graph itself contains the normalization step).
+- **`constants.dart`**: all magic numbers/URLs live here — model download URLs (hardcoded to the GitHub release `Chandan-CV/sims v0.1.0`, OpenAI CLIP ViT-B/32 int8) and filenames, `kEmbeddingDim=512`, `kMaxTokenLength=77`, `kImageSize=224`, `kSearchTopK=200`, `kSearchPageSize=50`, and the CLIP normalization mean/std.
+- **`image_preprocessor.dart`**: resize the shorter side to 224 (bicubic) → center-crop 224×224 → scale to `[0,1]` and normalize with CLIP's per-channel `kImageMean`/`kImageStd` → pack into a CHW `Float32List`. Matches Hugging Face's `CLIPImageProcessor` (see `test/image_preprocessor_test.dart`).
 
 ## 6. Entry point
 
@@ -133,3 +133,7 @@ All four services are hand-rolled singletons using the `factory` constructor + s
 | `lib/utils/constants.dart` | Global constants: URLs, filenames, dims, search params, normalization stats |
 | `lib/utils/image_preprocessor.dart` | Decode/crop/resize/normalize an image into a model input tensor |
 | `assets/tokenizer/tokenizer.json` | HuggingFace-format CLIP tokenizer vocab + merges |
+
+## Embedding model
+
+The embeddings come from OpenAI CLIP ViT-B/32 (int8 ONNX), produced by `tools/export_clip/export_clip.py`. The tokenizer implements CLIP's pre-tokenization regex and `</w>` end-of-word BPE, verified against the reference tokenizer in `test/tokenizer_test.dart`.
