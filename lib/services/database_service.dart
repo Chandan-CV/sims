@@ -178,6 +178,31 @@ class DatabaseService {
     return rows.map((r) => r['asset_id'] as String).toList();
   }
 
+  /// Multimodal search: searches for photos visually similar to [assetId] while
+  /// semantically refined by the text query [textEmbedding].
+  Future<List<String>> searchSimilarToAssetWithText(
+    String assetId,
+    List<double> textEmbedding,
+    int topK, {
+    double textWeight = 0.5,
+  }) async {
+    final vec = '[${textEmbedding.join(',')}]';
+    final rows = await _client!.query(
+      '''
+      SELECT asset_id
+      FROM images
+      WHERE embedding IS NOT NULL AND asset_id != ?
+      ORDER BY (
+        (1.0 - ?) * vector_distance_cos(embedding, (SELECT embedding FROM images WHERE asset_id = ?)) +
+        ? * vector_distance_cos(embedding, vector32(?))
+      )
+      LIMIT ?
+      ''',
+      positional: [textWeight, assetId, textWeight, vec, topK],
+    );
+    return rows.map((r) => r['asset_id'] as String).toList();
+  }
+
   /// Generic key/value read/write on the `meta` table — used for anything
   /// that's small, single-valued, and shared across isolates (e.g. a sync
   /// checkpoint, a background task's heartbeat). Both the UI isolate and a

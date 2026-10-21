@@ -5,6 +5,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/database_service.dart';
+import '../services/model_service.dart';
+import '../services/tokenizer_service.dart';
 import '../utils/constants.dart';
 
 class PhotoDetailScreen extends StatefulWidget {
@@ -20,6 +22,7 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
   List<AssetEntity> _related = [];
   bool _loadingRelated = true;
   bool _isFavorite = false;
+  String? _refinePrompt;
 
   @override
   void initState() {
@@ -28,19 +31,84 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
     _loadFavoriteState();
   }
 
-  Future<void> _loadRelated() async {
+  Future<void> _loadRelated([String? prompt]) async {
+    if (mounted) setState(() => _loadingRelated = true);
     try {
-      final ids = await DatabaseService()
-          .searchSimilarToAsset(widget.asset.id, kSearchTopK);
+      final List<String> ids;
+      if (prompt != null && prompt.trim().isNotEmpty) {
+        final tokenizer = TokenizerService();
+        final (inputIds, attentionMask) = tokenizer.tokenize(prompt.trim());
+        final textEmbedding =
+            await ModelService().encodeText(inputIds, attentionMask);
+        ids = await DatabaseService().searchSimilarToAssetWithText(
+          widget.asset.id,
+          textEmbedding,
+          kSearchTopK,
+        );
+      } else {
+        ids = await DatabaseService()
+            .searchSimilarToAsset(widget.asset.id, kSearchTopK);
+      }
       final assets = <AssetEntity>[];
       for (final id in ids.take(kSearchPageSize)) {
         final asset = await AssetEntity.fromId(id);
         if (asset != null) assets.add(asset);
       }
       if (mounted) setState(() => _related = assets);
+    } catch (e) {
+      debugPrint('[SIMS] Failed to load related: $e');
     } finally {
       if (mounted) setState(() => _loadingRelated = false);
     }
+  }
+
+  void _showRefineDialog() {
+    final controller = TextEditingController(text: _refinePrompt ?? '');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Refine with prompt'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'e.g. at the beach, in the snow',
+            labelText: 'Refinement',
+          ),
+          onSubmitted: (val) {
+            Navigator.pop(ctx);
+            _applyRefinement(val);
+          },
+        ),
+        actions: [
+          if (_refinePrompt != null)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _applyRefinement(null);
+              },
+              child: const Text('Clear'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _applyRefinement(controller.text);
+            },
+            child: const Text('Refine'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _applyRefinement(String? val) {
+    final clean = val?.trim();
+    setState(() => _refinePrompt = (clean != null && clean.isNotEmpty) ? clean : null);
+    _loadRelated(_refinePrompt);
   }
 
   Future<void> _loadFavoriteState() async {
@@ -273,12 +341,59 @@ class _PhotoDetailScreenState extends State<PhotoDetailScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text(
-              'Related',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(color: Colors.white70),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      'Related',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(color: Colors.white70),
+                    ),
+                    if (_refinePrompt != null) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.deepPurple.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: Colors.deepPurpleAccent, width: 0.5),
+                        ),
+                        child: Text(
+                          '+ "$_refinePrompt"',
+                          style: const TextStyle(
+                              color: Colors.deepPurpleAccent, fontSize: 11),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                GestureDetector(
+                  onTap: _showRefineDialog,
+                  child: Row(
+                    children: [
+                      Icon(
+                        _refinePrompt != null ? Icons.edit : Icons.tune,
+                        size: 14,
+                        color: Colors.deepPurpleAccent,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _refinePrompt != null ? 'Edit Prompt' : 'Refine with Text',
+                        style: const TextStyle(
+                          color: Colors.deepPurpleAccent,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 8),
