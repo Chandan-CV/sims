@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -21,6 +22,14 @@ class _DownloadScreenState extends State<DownloadScreen> {
   double _textProgress = 0;
   String? _error;
 
+  Future<void> _verifyChecksum(File file, String expectedSha256) async {
+    final digest = await sha256.bind(file.openRead()).first;
+    if (digest.toString().toLowerCase() != expectedSha256.toLowerCase()) {
+      throw Exception(
+          'Checksum mismatch for ${file.path}: expected $expectedSha256 but got $digest');
+    }
+  }
+
   Future<void> _startDownload() async {
     setState(() {
       _phase = _Phase.downloading;
@@ -29,36 +38,59 @@ class _DownloadScreenState extends State<DownloadScreen> {
       _textProgress = 0;
     });
 
+    final dir = await getApplicationDocumentsDirectory();
+    final imgPath = '${dir.path}/$kImageEncoderFilename';
+    final txtPath = '${dir.path}/$kTextEncoderFilename';
+    final imgTmpPath = '$imgPath.tmp';
+    final txtTmpPath = '$txtPath.tmp';
+
     try {
-      final dir = await getApplicationDocumentsDirectory();
       final dio = Dio();
 
-      final imgPath = '${dir.path}/$kImageEncoderFilename';
-      final txtPath = '${dir.path}/$kTextEncoderFilename';
-
-      debugPrint('[SIMS] downloading img → $imgPath');
+      debugPrint('[SIMS] downloading img → $imgTmpPath');
       await dio.download(
         kImageEncoderUrl,
-        imgPath,
+        imgTmpPath,
         onReceiveProgress: (received, total) {
           if (total > 0 && mounted) {
             setState(() => _imageProgress = received / total);
           }
         },
       );
-      debugPrint('[SIMS] img done — exists=${File(imgPath).existsSync()}  size=${File(imgPath).existsSync() ? File(imgPath).lengthSync() : 0} bytes');
+      debugPrint('[SIMS] img download complete');
 
-      debugPrint('[SIMS] downloading txt → $txtPath');
+      debugPrint('[SIMS] downloading txt → $txtTmpPath');
       await dio.download(
         kTextEncoderUrl,
-        txtPath,
+        txtTmpPath,
         onReceiveProgress: (received, total) {
           if (total > 0 && mounted) {
             setState(() => _textProgress = received / total);
           }
         },
       );
-      debugPrint('[SIMS] txt done — exists=${File(txtPath).existsSync()}  size=${File(txtPath).existsSync() ? File(txtPath).lengthSync() : 0} bytes');
+      debugPrint('[SIMS] txt download complete');
+
+      if (mounted) {
+        setState(() => _phase = _Phase.verifying);
+      }
+
+      debugPrint('[SIMS] verifying image encoder checksum…');
+      await _verifyChecksum(File(imgTmpPath), kImageEncoderSha256);
+
+      debugPrint('[SIMS] verifying text encoder checksum…');
+      await _verifyChecksum(File(txtTmpPath), kTextEncoderSha256);
+
+      // Atomically move verified models into final paths.
+      final imgFinal = File(imgPath);
+      if (imgFinal.existsSync()) imgFinal.deleteSync();
+      await File(imgTmpPath).rename(imgPath);
+
+      final txtFinal = File(txtPath);
+      if (txtFinal.existsSync()) txtFinal.deleteSync();
+      await File(txtTmpPath).rename(txtPath);
+
+      debugPrint('[SIMS] both models verified and ready');
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
@@ -73,12 +105,26 @@ class _DownloadScreenState extends State<DownloadScreen> {
         });
       }
     } catch (e, st) {
-      debugPrint('[SIMS] unexpected error: $e\n$st');
+      debugPrint('[SIMS] verification/download error: $e\n$st');
       if (mounted) {
         setState(() {
           _phase = _Phase.idle;
           _error = 'Error: $e';
         });
+      }
+    } finally {
+      // Clean up incomplete temporary files if an error occurred.
+      final imgTmp = File(imgTmpPath);
+      if (imgTmp.existsSync()) {
+        try {
+          imgTmp.deleteSync();
+        } catch (_) {}
+      }
+      final txtTmp = File(txtTmpPath);
+      if (txtTmp.existsSync()) {
+        try {
+          txtTmp.deleteSync();
+        } catch (_) {}
       }
     }
   }
@@ -103,7 +149,13 @@ class _DownloadScreenState extends State<DownloadScreen> {
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
               const Spacer(),
-              if (_phase == _Phase.downloading) ...[
+              if (_phase == _Phase.verifying) ...[
+                const Center(child: CircularProgressIndicator()),
+                const SizedBox(height: 16),
+                Text('Verifying model integrity…',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium),
+              ] else if (_phase == _Phase.downloading) ...[
                 _ModelProgress(
                     label: 'Image encoder', progress: _imageProgress),
                 const SizedBox(height: 16),
@@ -156,4 +208,4 @@ class _ModelProgress extends StatelessWidget {
   }
 }
 
-enum _Phase { idle, downloading }
+enum _Phase { idle, downloading, verifying }

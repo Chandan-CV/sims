@@ -8,6 +8,12 @@ const String kTextEncoderFilename = 'clip_vit_b32_text_int8.onnx';
 const String kImageEncoderUrl = '$kModelReleaseBaseUrl/$kImageEncoderFilename';
 const String kTextEncoderUrl = '$kModelReleaseBaseUrl/$kTextEncoderFilename';
 
+// SHA-256 checksums for verifying downloaded model integrity.
+const String kImageEncoderSha256 =
+    'afea268d2aca96809bcd5f2392f62499489a2709dd0565921612e2bb934b378e';
+const String kTextEncoderSha256 =
+    '982aa3c29c9483a69592b4947a6c363f06d67eebe66394f29d42cff0d93f0ce0';
+
 // Approximate combined download size, shown on the download screen.
 const String kModelDownloadSizeLabel = '~200 MB';
 
