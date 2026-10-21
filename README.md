@@ -156,7 +156,7 @@ Found a bug or have a feature request? [Open an issue](https://github.com/Chanda
 - [ ] Search-quality improvements
 - [ ] Offloading preprocessing and inference to background isolates
 - [ ] More automated tests (tokenizer and preprocessing parity tests exist)
-- [ ] More model options (e.g. CLIP ViT-B/16)
+- [x] More model options (e.g. CLIP ViT-B/16, Google SigLIP architecture profiles)
 - [ ] Checksum verification of downloaded models
 
 

@@ -1,10 +1,76 @@
-// OpenAI CLIP ViT-B/32, int8-quantized ONNX (produced by tools/export_clip).
-// Model download URLs — upload the two files in tools/export_clip/out/ to this
-// GitHub release.
+// Model release base URL for ONNX models.
 const String kModelReleaseBaseUrl =
     'https://github.com/Chandan-CV/sims/releases/download/v0.0.2';
-const String kImageEncoderFilename = 'clip_vit_b32_image_int8.onnx';
-const String kTextEncoderFilename = 'clip_vit_b32_text_int8.onnx';
+
+/// Configuration profile for vision backbones (CLIP, SigLIP, etc.)
+class VisionBackboneConfig {
+  final String id;
+  final String displayName;
+  final String imageEncoderFilename;
+  final String textEncoderFilename;
+  final int embeddingDim;
+  final int maxTokenLength;
+  final int imageSize;
+  final List<double> imageMean;
+  final List<double> imageStd;
+
+  const VisionBackboneConfig({
+    required this.id,
+    required this.displayName,
+    required this.imageEncoderFilename,
+    required this.textEncoderFilename,
+    required this.embeddingDim,
+    required this.maxTokenLength,
+    required this.imageSize,
+    required this.imageMean,
+    required this.imageStd,
+  });
+
+  /// Default: OpenAI CLIP ViT-B/32 (int8 quantized).
+  static const clipVitB32 = VisionBackboneConfig(
+    id: 'clip_vit_b32',
+    displayName: 'OpenAI CLIP ViT-B/32',
+    imageEncoderFilename: 'clip_vit_b32_image_int8.onnx',
+    textEncoderFilename: 'clip_vit_b32_text_int8.onnx',
+    embeddingDim: 512,
+    maxTokenLength: 77,
+    imageSize: 224,
+    imageMean: [0.48145466, 0.4578275, 0.40821073],
+    imageStd: [0.26862954, 0.26130258, 0.27577711],
+  );
+
+  /// Fine-grained: OpenAI CLIP ViT-B/16 (16x16 patch size).
+  static const clipVitB16 = VisionBackboneConfig(
+    id: 'clip_vit_b16',
+    displayName: 'OpenAI CLIP ViT-B/16',
+    imageEncoderFilename: 'clip_vit_b16_image_int8.onnx',
+    textEncoderFilename: 'clip_vit_b16_text_int8.onnx',
+    embeddingDim: 512,
+    maxTokenLength: 77,
+    imageSize: 224,
+    imageMean: [0.48145466, 0.4578275, 0.40821073],
+    imageStd: [0.26862954, 0.26130258, 0.27577711],
+  );
+
+  /// Advanced zero-shot retrieval: Google SigLIP Base Patch 16.
+  static const siglipBasePatch16 = VisionBackboneConfig(
+    id: 'siglip_b16',
+    displayName: 'Google SigLIP Base Patch 16',
+    imageEncoderFilename: 'siglip_base_patch16_image_int8.onnx',
+    textEncoderFilename: 'siglip_base_patch16_text_int8.onnx',
+    embeddingDim: 768,
+    maxTokenLength: 64,
+    imageSize: 224,
+    imageMean: [0.5, 0.5, 0.5],
+    imageStd: [0.5, 0.5, 0.5],
+  );
+}
+
+// Active vision model configuration.
+const VisionBackboneConfig kActiveBackbone = VisionBackboneConfig.clipVitB32;
+
+const String kImageEncoderFilename = kActiveBackbone.imageEncoderFilename;
+const String kTextEncoderFilename = kActiveBackbone.textEncoderFilename;
 const String kImageEncoderUrl = '$kModelReleaseBaseUrl/$kImageEncoderFilename';
 const String kTextEncoderUrl = '$kModelReleaseBaseUrl/$kTextEncoderFilename';
 
@@ -13,9 +79,9 @@ const String kModelDownloadSizeLabel = '~200 MB';
 
 const String kDbFilename = 'sims.db';
 
-const int kEmbeddingDim = 512;
-const int kMaxTokenLength = 77;
-const int kImageSize = 224;
+const int kEmbeddingDim = kActiveBackbone.embeddingDim;
+const int kMaxTokenLength = kActiveBackbone.maxTokenLength;
+const int kImageSize = kActiveBackbone.imageSize;
 const int kSearchTopK = 200;
 const int kSearchPageSize = 50;
 
@@ -33,9 +99,9 @@ const int kIndexBatchSize = 10;
 // bounded instead of accumulating for the whole library.
 const int kCacheClearIntervalBatches = 50;
 
-// OpenAI CLIP normalisation constants (applied in ImagePreprocessor)
-const List<double> kImageMean = [0.48145466, 0.4578275, 0.40821073];
-const List<double> kImageStd = [0.26862954, 0.26130258, 0.27577711];
+// Normalisation constants for active vision backbone
+const List<double> kImageMean = kActiveBackbone.imageMean;
+const List<double> kImageStd = kActiveBackbone.imageStd;
 
 // "Run in background" one-off indexing task, handed off from IndexingScreen
 // (see BackgroundIndexService). Android only.
