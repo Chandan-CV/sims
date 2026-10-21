@@ -56,17 +56,29 @@ class ModelService {
   }
 
   Future<List<double>> encodeText(
-      List<int> inputIds, List<int> attentionMask) async {
+      List<int> inputIds, [List<int>? attentionMask]) async {
     final idsTensor = await OrtValue.fromList(
         Int64List.fromList(inputIds), [1, kMaxTokenLength]);
 
+    OrtValue? maskTensor;
+    if (_textEncoder != null &&
+        _textEncoder!.inputNames.contains('attention_mask') &&
+        attentionMask != null) {
+      maskTensor = await OrtValue.fromList(
+          Int64List.fromList(attentionMask), [1, kMaxTokenLength]);
+    }
+
+    final inputs = <String, OrtValue>{'text_input': idsTensor};
+    if (maskTensor != null) {
+      inputs['attention_mask'] = maskTensor;
+    }
+
     late final Map<String, OrtValue> outputs;
     try {
-      outputs = await _textEncoder!.run({
-        'text_input': idsTensor,
-      });
+      outputs = await _textEncoder!.run(inputs);
     } finally {
       await idsTensor.dispose();
+      await maskTensor?.dispose();
     }
 
     final List<double> flat;
