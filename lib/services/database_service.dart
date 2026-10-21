@@ -8,7 +8,7 @@ class DatabaseService {
   factory DatabaseService() => _instance;
   DatabaseService._internal();
 
-  static const _kSchemaVersion = 3;
+  static const _kSchemaVersion = 4;
 
   LibsqlClient? _client;
   LibsqlClient get client => _client!;
@@ -35,16 +35,18 @@ class DatabaseService {
     await _client!.execute('DROP TABLE IF EXISTS images');
     await _client!.execute('''
       CREATE TABLE images (
-        asset_id  TEXT PRIMARY KEY,
-        embedding F32_BLOB($kEmbeddingDim)
+        asset_id    TEXT PRIMARY KEY,
+        embedding   F32_BLOB($kEmbeddingDim),
+        create_time INTEGER
       )
     ''');
-    // Deliberately no libsql_vector_idx here: at personal-photo-library
-    // scale (thousands, not millions, of rows) an exact linear scan via
-    // vector_distance_cos (see searchSimilar/searchSimilarToAsset below)
-    // is fast enough and avoids both the DiskANN graph's disk overhead
-    // (measured: ~800MB of graph for ~8k photos, dwarfing the ~32MB of
-    // actual embeddings) and its approximate-search recall trade-off.
+    // Step-by-step non-destructive migrations for existing databases
+    if (current < 4) {
+      // Ensure create_time column exists for metadata/date filtering
+      try {
+        await _client!.execute('ALTER TABLE images ADD COLUMN create_time INTEGER');
+      } catch (_) {}
+    }
     await _client!.execute('PRAGMA user_version = $_kSchemaVersion');
   }
 
@@ -74,27 +76,44 @@ class DatabaseService {
     }
   }
 
-  /// Fills in the embedding for an already-discovered asset_id row.
-  Future<void> setEmbedding(String assetId, List<double> embedding) async {
+  /// Fills in the embedding and optional creation timestamp for an already-discovered asset_id row.
+  Future<void> setEmbedding(String assetId, List<double> embedding,
+      {int? createTime}) async {
     final vec = '[${embedding.join(',')}]';
-    await _client!.execute(
-      'UPDATE images SET embedding = vector32(?) WHERE asset_id = ?',
-      positional: [vec, assetId],
-    );
+    if (createTime != null) {
+      await _client!.execute(
+        'UPDATE images SET embedding = vector32(?), create_time = ? WHERE asset_id = ?',
+        positional: [vec, createTime, assetId],
+      );
+    } else {
+      await _client!.execute(
+        'UPDATE images SET embedding = vector32(?) WHERE asset_id = ?',
+        positional: [vec, assetId],
+      );
+    }
   }
 
   /// Same as [setEmbedding], but writes a whole batch in one transaction
   /// instead of a separate implicit commit per row.
-  Future<void> setEmbeddings(Map<String, List<double>> embeddings) async {
+  Future<void> setEmbeddings(Map<String, List<double>> embeddings,
+      {Map<String, int>? createTimes}) async {
     if (embeddings.isEmpty) return;
     final txn = await _client!.transaction();
     try {
       for (final entry in embeddings.entries) {
         final vec = '[${entry.value.join(',')}]';
-        await txn.execute(
-          'UPDATE images SET embedding = vector32(?) WHERE asset_id = ?',
-          positional: [vec, entry.key],
-        );
+        final ct = createTimes?[entry.key];
+        if (ct != null) {
+          await txn.execute(
+            'UPDATE images SET embedding = vector32(?), create_time = ? WHERE asset_id = ?',
+            positional: [vec, ct, entry.key],
+          );
+        } else {
+          await txn.execute(
+            'UPDATE images SET embedding = vector32(?) WHERE asset_id = ?',
+            positional: [vec, entry.key],
+          );
+        }
       }
       await txn.commit();
     } catch (e) {
@@ -148,17 +167,37 @@ class DatabaseService {
   }
 
   Future<List<String>> searchSimilar(
-      List<double> queryEmbedding, int topK) async {
+    List<double> queryEmbedding,
+    int topK, {
+    int? minCreateTime,
+    int? maxCreateTime,
+  }) async {
     final vec = '[${queryEmbedding.join(',')}]';
+    final conditions = <String>['embedding IS NOT NULL'];
+    final positional = <dynamic>[];
+
+    if (minCreateTime != null) {
+      conditions.add('create_time >= ?');
+      positional.add(minCreateTime);
+    }
+    if (maxCreateTime != null) {
+      conditions.add('create_time <= ?');
+      positional.add(maxCreateTime);
+    }
+
+    positional.add(vec);
+    positional.add(topK);
+
+    final whereClause = conditions.join(' AND ');
     final rows = await _client!.query(
       '''
       SELECT asset_id
       FROM images
-      WHERE embedding IS NOT NULL
+      WHERE $whereClause
       ORDER BY vector_distance_cos(embedding, vector32(?))
       LIMIT ?
       ''',
-      positional: [vec, topK],
+      positional: positional,
     );
     return rows.map((r) => r['asset_id'] as String).toList();
   }

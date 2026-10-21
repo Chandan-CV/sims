@@ -28,6 +28,7 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _searching = false;
   bool _loadingMore = false;
   int _unindexedCount = 0;
+  DateTimeRange? _dateFilter;
 
   @override
   void initState() {
@@ -108,7 +109,15 @@ class _SearchScreenState extends State<SearchScreen> {
       final (inputIds, attentionMask) = tokenizer.tokenize(query);
       final embedding = await ModelService().encodeText(inputIds, attentionMask);
 
-      _resultIds = await DatabaseService().searchSimilar(embedding, kSearchTopK);
+      final minTime = _dateFilter?.start.millisecondsSinceEpoch;
+      final maxTime = _dateFilter?.end.add(const Duration(days: 1)).millisecondsSinceEpoch;
+
+      _resultIds = await DatabaseService().searchSimilar(
+        embedding,
+        kSearchTopK,
+        minCreateTime: minTime,
+        maxCreateTime: maxTime,
+      );
       await _loadNextPage();
     } catch (e) {
       debugPrint('[SIMS] Search failed: $e');
@@ -153,6 +162,34 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
         actions: [
           IconButton(
+            tooltip: _dateFilter == null ? 'Filter by date' : 'Clear date filter',
+            icon: Icon(
+              _dateFilter == null
+                  ? Icons.calendar_today_outlined
+                  : Icons.calendar_month,
+              color: _dateFilter == null
+                  ? null
+                  : Theme.of(context).colorScheme.primary,
+            ),
+            onPressed: () async {
+              if (_dateFilter != null) {
+                setState(() => _dateFilter = null);
+                if (_controller.text.isNotEmpty) _search(_controller.text);
+                return;
+              }
+              final now = DateTime.now();
+              final picked = await showDateRangePicker(
+                context: context,
+                firstDate: DateTime(2000),
+                lastDate: now,
+              );
+              if (picked != null) {
+                setState(() => _dateFilter = picked);
+                if (_controller.text.isNotEmpty) _search(_controller.text);
+              }
+            },
+          ),
+          IconButton(
             tooltip: 'Favorites',
             icon: const Icon(Icons.favorite_outline),
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(
@@ -175,9 +212,40 @@ class _SearchScreenState extends State<SearchScreen> {
           ),
         ],
       ),
-      body: _resultIds.isEmpty && !_searching
-          ? _buildEmpty()
-          : _buildGrid(),
+      body: Column(
+        children: [
+          if (_dateFilter != null) _buildDateFilterChip(),
+          Expanded(
+            child: _resultIds.isEmpty && !_searching
+                ? _buildEmpty()
+                : _buildGrid(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDateFilterChip() {
+    final start =
+        '${_dateFilter!.start.year}-${_dateFilter!.start.month.toString().padLeft(2, '0')}-${_dateFilter!.start.day.toString().padLeft(2, '0')}';
+    final end =
+        '${_dateFilter!.end.year}-${_dateFilter!.end.month.toString().padLeft(2, '0')}-${_dateFilter!.end.day.toString().padLeft(2, '0')}';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          InputChip(
+            avatar: const Icon(Icons.date_range, size: 18),
+            label: Text('$start to $end'),
+            selected: true,
+            onDeleted: () {
+              setState(() => _dateFilter = null);
+              if (_controller.text.isNotEmpty) _search(_controller.text);
+            },
+          ),
+        ],
+      ),
     );
   }
 

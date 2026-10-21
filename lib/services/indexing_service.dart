@@ -112,10 +112,17 @@ class IndexingService {
                 '[SIMS] Encoding batch of ${prepared.length} (${indexed + prepared.length}/$total)');
             final embeddings = await _model
                 .encodeImages([for (final p in prepared) p.tensor]);
-            await _db.setEmbeddings({
-              for (var i = 0; i < prepared.length; i++)
-                prepared[i].id: embeddings[i],
-            });
+            await _db.setEmbeddings(
+              {
+                for (var i = 0; i < prepared.length; i++)
+                  prepared[i].id: embeddings[i],
+              },
+              createTimes: {
+                for (var i = 0; i < prepared.length; i++)
+                  if (prepared[i].createTime != null)
+                    prepared[i].id: prepared[i].createTime!,
+              },
+            );
           } catch (e) {
             debugPrint('Skipping batch ${batches[b]}: $e');
           }
@@ -150,7 +157,11 @@ class IndexingService {
           quality: 95,
         );
         if (bytes != null) {
-          prepared.add(_PreparedImage(id, ImagePreprocessor.preprocess(bytes)));
+          prepared.add(_PreparedImage(
+            id,
+            ImagePreprocessor.preprocess(bytes),
+            createTime: asset?.createDateTime.millisecondsSinceEpoch,
+          ));
         }
       } catch (e) {
         debugPrint('Skipping $id: $e');
@@ -161,7 +172,8 @@ class IndexingService {
 }
 
 class _PreparedImage {
-  const _PreparedImage(this.id, this.tensor);
+  const _PreparedImage(this.id, this.tensor, {this.createTime});
   final String id;
   final Float32List tensor;
+  final int? createTime;
 }
