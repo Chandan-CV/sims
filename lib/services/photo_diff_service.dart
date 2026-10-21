@@ -132,6 +132,56 @@ class PhotoDiffService {
     }
 
     await _db.setLastSyncMillis(now.millisecondsSinceEpoch);
+
+    // If there were inferred or detected removals, reconcile and prune ghost rows.
+    final diff = lastDiff.value;
+    if (diff != null && diff.removed > 0) {
+      await reconcileDeletedAssets();
+    }
+
     return seen;
+  }
+
+  /// Scans the stored database rows in batches to detect and purge assets
+  /// that were deleted from the device gallery. Safe and non-blocking.
+  Future<int> reconcileDeletedAssets({int pageSize = 200}) async {
+    final state = await PhotoManager.getPermissionState(
+        requestOption: const PermissionRequestOption());
+    if (state != PermissionState.authorized) {
+      // Don't prune under limited access since non-granted photos would falsely report null
+      return 0;
+    }
+
+    int offset = 0;
+    int prunedCount = 0;
+
+    while (true) {
+      final ids = await _db.getAllAssetIds(limit: pageSize, offset: offset);
+      if (ids.isEmpty) break;
+
+      final missing = <String>[];
+      for (final id in ids) {
+        final asset = await AssetEntity.fromId(id);
+        if (asset == null) {
+          missing.add(id);
+        }
+      }
+
+      if (missing.isNotEmpty) {
+        await _db.deleteAssetIds(missing);
+        prunedCount += missing.length;
+        // Don't advance offset by the deleted count since rows were removed
+        offset += (ids.length - missing.length);
+      } else {
+        offset += ids.length;
+      }
+
+      if (ids.length < pageSize) break;
+    }
+
+    if (prunedCount > 0) {
+      await checkForChanges();
+    }
+    return prunedCount;
   }
 }

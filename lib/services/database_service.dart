@@ -128,6 +128,15 @@ class DatabaseService {
     return [for (final row in rows) row['asset_id'] as String];
   }
 
+  /// Returns all stored asset IDs (paged).
+  Future<List<String>> getAllAssetIds({int limit = 500, int offset = 0}) async {
+    final rows = await _client!.query(
+      'SELECT asset_id FROM images LIMIT ? OFFSET ?',
+      positional: [limit, offset],
+    );
+    return [for (final row in rows) row['asset_id'] as String];
+  }
+
   /// Removes specific rows, e.g. assets found to be gone from the device
   /// when a search hit couldn't be loaded.
   Future<void> deleteAssetIds(Iterable<String> assetIds) async {
