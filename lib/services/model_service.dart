@@ -1,5 +1,7 @@
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 
 import '../utils/constants.dart';
@@ -15,10 +17,44 @@ class ModelService {
 
   bool get isLoaded => _imageEncoder != null && _textEncoder != null;
 
+  OrtSessionOptions _createSessionOptions() {
+    final providers = <OrtProvider>[];
+    if (!kIsWeb) {
+      if (Platform.isAndroid) {
+        providers.add(OrtProvider.NNAPI);
+      } else if (Platform.isIOS || Platform.isMacOS) {
+        providers.add(OrtProvider.CORE_ML);
+      }
+    }
+    providers.add(OrtProvider.CPU);
+
+    return OrtSessionOptions(
+      providers: providers,
+      intraOpNumThreads: 4,
+    );
+  }
+
   Future<void> loadModels(
       String imageEncoderPath, String textEncoderPath) async {
-    _imageEncoder = await _runtime.createSession(imageEncoderPath);
-    _textEncoder = await _runtime.createSession(textEncoderPath);
+    final options = _createSessionOptions();
+
+    try {
+      _imageEncoder =
+          await _runtime.createSession(imageEncoderPath, options: options);
+    } catch (e) {
+      debugPrint(
+          '[SIMS] Hardware-accelerated image encoder failed, falling back to CPU: $e');
+      _imageEncoder = await _runtime.createSession(imageEncoderPath);
+    }
+
+    try {
+      _textEncoder =
+          await _runtime.createSession(textEncoderPath, options: options);
+    } catch (e) {
+      debugPrint(
+          '[SIMS] Hardware-accelerated text encoder failed, falling back to CPU: $e');
+      _textEncoder = await _runtime.createSession(textEncoderPath);
+    }
   }
 
   /// Encodes a batch of already-preprocessed images in a single ONNX run.
