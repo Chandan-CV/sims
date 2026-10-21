@@ -38,7 +38,7 @@ const List<double> kImageMean = [0.48145466, 0.4578275, 0.40821073];
 const List<double> kImageStd = [0.26862954, 0.26130258, 0.27577711];
 
 // "Run in background" one-off indexing task, handed off from IndexingScreen
-// (see BackgroundIndexService). Android only.
+// (see BackgroundIndexService). Supports Android WorkManager and iOS BGProcessingTask.
 const String kIndexNowTaskId = 'sims.indexNow';
 const String kIndexNowTaskName = 'sims.indexNow';
 
