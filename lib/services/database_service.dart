@@ -29,22 +29,35 @@ class DatabaseService {
 
   Future<void> _migrateSchema() async {
     final rows = await _client!.query('PRAGMA user_version');
-    final current = (rows.first['user_version'] as int?) ?? 0;
+    int current = (rows.first['user_version'] as int?) ?? 0;
     if (current >= _kSchemaVersion) return;
 
-    await _client!.execute('DROP TABLE IF EXISTS images');
-    await _client!.execute('''
-      CREATE TABLE images (
-        asset_id  TEXT PRIMARY KEY,
-        embedding F32_BLOB($kEmbeddingDim)
-      )
-    ''');
-    // Deliberately no libsql_vector_idx here: at personal-photo-library
-    // scale (thousands, not millions, of rows) an exact linear scan via
-    // vector_distance_cos (see searchSimilar/searchSimilarToAsset below)
-    // is fast enough and avoids both the DiskANN graph's disk overhead
-    // (measured: ~800MB of graph for ~8k photos, dwarfing the ~32MB of
-    // actual embeddings) and its approximate-search recall trade-off.
+    // Fresh database initialization: create base table
+    if (current == 0) {
+      await _client!.execute('''
+        CREATE TABLE IF NOT EXISTS images (
+          asset_id  TEXT PRIMARY KEY,
+          embedding F32_BLOB($kEmbeddingDim)
+        )
+      ''');
+      // Deliberately no libsql_vector_idx here: at personal-photo-library
+      // scale (thousands, not millions, of rows) an exact linear scan via
+      // vector_distance_cos (see searchSimilar/searchSimilarToAsset below)
+      // is fast enough and avoids both the DiskANN graph's disk overhead
+      // (measured: ~800MB of graph for ~8k photos, dwarfing the ~32MB of
+      // actual embeddings) and its approximate-search recall trade-off.
+      await _client!.execute('PRAGMA user_version = $_kSchemaVersion');
+      return;
+    }
+
+    // Step-by-step non-destructive migrations for existing databases
+    if (current < 3) {
+      // Prior schema version bump to 3 removed experimental vector indices
+      await _client!.execute('DROP INDEX IF EXISTS idx_vec');
+      await _client!.execute('DROP INDEX IF EXISTS idx_asset_id');
+      current = 3;
+    }
+
     await _client!.execute('PRAGMA user_version = $_kSchemaVersion');
   }
 

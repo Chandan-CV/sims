@@ -108,7 +108,7 @@ All four services are hand-rolled singletons using the `factory` constructor + s
 1. **No isolate/compute offloading** — every ONNX inference call and image decode runs on the UI thread. This is the single biggest deviation from the original plan and the most likely source of jank during indexing.
 2. **Image preprocessing likely skips mean/std normalization** (`kImageMean`/`kImageStd` unused) — worth verifying against how the ONNX model was exported before trusting search quality.
 3. **Text encoder attention mask is computed but never passed to the ONNX session** — dead code, or a missing wiring bug depending on what the model graph expects.
-4. **Schema migration drops all data on schema change** — acceptable for a solo/pre-release project, unacceptable once real user data needs to survive an app update.
+4. **Non-destructive schema migrations** — incremental step-by-step migrations preserve existing user embeddings across schema version upgrades instead of dropping tables.
 5. **No persisted indexing progress/resume state** — an app kill mid-index just leaves partial results; the user has to re-open the Indexing screen to pick up remaining assets (which does work, since indexing is idempotent per-asset).
 6. **`countUnindexed()` does a full asset scan + full DB id fetch** on every `SearchScreen` mount — fine at current photo-library scales, will not scale to tens of thousands of photos without pagination/streaming.
 7. **No automated tests** despite `flutter_test` being present as a dependency and referenced in `CLAUDE.md`.
