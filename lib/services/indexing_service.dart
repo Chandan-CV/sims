@@ -136,27 +136,27 @@ class IndexingService {
     }
   }
 
-  /// Fetches thumbnails and preprocesses them into model input tensors for
-  /// one batch. Images that fail to fetch/decode are skipped individually
-  /// rather than aborting the whole batch.
+  /// Fetches thumbnails and offloads preprocessing to background worker isolates
+  /// via [compute], keeping the UI isolate responsive. Images that fail to
+  /// fetch/decode are skipped individually rather than aborting the whole batch.
   Future<List<_PreparedImage>> _fetchAndPreprocessBatch(
       List<String> ids) async {
-    final prepared = <_PreparedImage>[];
-    for (final id in ids) {
+    final results = await Future.wait(ids.map((id) async {
       try {
         final asset = await AssetEntity.fromId(id);
         final bytes = await asset?.thumbnailDataWithSize(
           const ThumbnailSize(kImageSize, kImageSize),
           quality: 95,
         );
-        if (bytes != null) {
-          prepared.add(_PreparedImage(id, ImagePreprocessor.preprocess(bytes)));
-        }
+        if (bytes == null) return null;
+        final tensor = await compute(ImagePreprocessor.preprocess, bytes);
+        return _PreparedImage(id, tensor);
       } catch (e) {
         debugPrint('Skipping $id: $e');
+        return null;
       }
-    }
-    return prepared;
+    }));
+    return results.whereType<_PreparedImage>().toList();
   }
 }
 

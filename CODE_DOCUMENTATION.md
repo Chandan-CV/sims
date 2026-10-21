@@ -105,7 +105,7 @@ All four services are hand-rolled singletons using the `factory` constructor + s
 
 ## 7. Known gaps / quality notes (for review & prioritization)
 
-1. **No isolate/compute offloading** — every ONNX inference call and image decode runs on the UI thread. This is the single biggest deviation from the original plan and the most likely source of jank during indexing.
+1. **Image preprocessing offloaded to worker isolates** — thumbnail decoding and CHW tensor packing are offloaded via `compute()`, preventing UI jank during foreground indexing.
 2. **Image preprocessing likely skips mean/std normalization** (`kImageMean`/`kImageStd` unused) — worth verifying against how the ONNX model was exported before trusting search quality.
 3. **Text encoder attention mask is computed but never passed to the ONNX session** — dead code, or a missing wiring bug depending on what the model graph expects.
 4. **Schema migration drops all data on schema change** — acceptable for a solo/pre-release project, unacceptable once real user data needs to survive an app update.

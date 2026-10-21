@@ -154,7 +154,7 @@ Found a bug or have a feature request? [Open an issue](https://github.com/Chanda
 ## 🗺 Roadmap
 
 - [ ] Search-quality improvements
-- [ ] Offloading preprocessing and inference to background isolates
+- [x] Offloading preprocessing to background isolates
 - [ ] More automated tests (tokenizer and preprocessing parity tests exist)
 - [ ] More model options (e.g. CLIP ViT-B/16)
 - [ ] Checksum verification of downloaded models
