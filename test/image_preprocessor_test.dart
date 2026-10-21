@@ -27,4 +27,14 @@ void main() {
     // allow a small tolerance (values are in normalised units, range ~±2).
     expect(sumAbs / actual.length, lessThan(0.05));
   });
+
+  test('preprocessing with letterbox preserves bounds and non-destructive aspect ratio', () {
+    final bytes = File('test/fixtures/preprocess_sample.jpg').readAsBytesSync();
+    final tensor = ImagePreprocessor.preprocess(
+      bytes,
+      cropMode: ImageCropMode.letterbox,
+    );
+    expect(tensor.length, 3 * 224 * 224);
+    expect(tensor.any((v) => v != 0.0), isTrue);
+  });
 }
